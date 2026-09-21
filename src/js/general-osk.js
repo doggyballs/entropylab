@@ -192,7 +192,7 @@
       // panel below the whole grid at full content width.
       const field = input.closest("label.field, .field") || input.parentElement;
       const row = field && field.closest(".key-settings-row");
-      const grid = field && field.closest(".vanity-grid, .derivation-advanced-fields");
+      const grid = field && field.closest(".vanity-grid, .derivation-advanced-fields, .bip85-grid");
       if (row && row.parentNode) {
         row.parentNode.insertBefore(panel, row.nextSibling);
         // Column detection: compare the field against the row's first grid child
