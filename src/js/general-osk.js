@@ -1,391 +1,184 @@
-// ==== EntropyLab general on-screen keyboard ====
-// For non-sensitive text/number inputs on touch devices.
-// Shows only when (pointer: coarse) is detected.
-// Follows the existing hodlKeyboardToggleMarkup / hodlKeyboardMarkup patterns.
+// Optional kiosk keyboard. Ordinary loads install no DOM or event listeners.
 (function () {
   "use strict";
+  if (new URLSearchParams(location.search).get("osk") !== "1") return;
 
-  // !!! DEBUG-ONLY OVERRIDE — REMOVE BEFORE SUBMITTING THE PR !!!
-  // Forces the OSK on for desktop development (pikvm/laptop iteration).
-  // When done iterating, delete this const to restore touch-only gating.
-  const GENERAL_OSK_FORCE_ON = true;
-
-  // Only on touch devices (unless the debug override above is set).
-  // Exclude phones/tablets — they have a system IME, and showing our
-  // keyboard on top of it is a double-keyboard UX disaster. The OSK is
-  // for kiosks (touch + no system keyboard), not for phones.
-  const isKiosk = !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-  if (!GENERAL_OSK_FORCE_ON && (!window.matchMedia("(pointer: coarse)").matches || !isKiosk)) return;
-
-  const KEYBOARD_ID = "general-osk";
-  const TOGGLE_CLASS = "general-keyboard-toggle";
-
-  // Keyboard SVG icon (same visual language as existing seed-keyboard-toggle)
-  const toggleSVG = `<svg viewBox="0 0 64 44" aria-hidden="true" focusable="false"><rect class="seed-keyboard-icon-case" x="3" y="6" width="58" height="32" rx="4"/><g class="seed-keyboard-icon-keys"><rect x="9" y="10" width="4" height="5" rx=".5"/><rect x="15" y="10" width="4" height="5" rx=".5"/><rect x="21" y="10" width="4" height="5" rx=".5"/><rect x="27" y="10" width="4" height="5" rx=".5"/><rect x="33" y="10" width="4" height="5" rx=".5"/><rect x="39" y="10" width="4" height="5" rx=".5"/><rect x="45" y="10" width="4" height="5" rx=".5"/><rect x="51" y="10" width="4" height="5" rx=".5"/><rect x="12" y="18" width="4" height="5" rx=".5"/><rect x="18" y="18" width="4" height="5" rx=".5"/><rect x="24" y="18" width="4" height="5" rx=".5"/><rect x="30" y="18" width="4" height="5" rx=".5"/><rect x="36" y="18" width="4" height="5" rx=".5"/><rect x="42" y="18" width="4" height="5" rx=".5"/><rect x="48" y="18" width="4" height="5" rx=".5"/><rect x="17" y="28" width="30" height="5" rx=".75"/></g></svg>`;
-
-  let activeInput = null;
-  let keyboardVisible = false;
-
-  // Fields already covered by existing on-screen keyboards
-  const EXISTING_KEYBOARD_FIELDS = new Set([
-    "entropy-input", "pass", "private-key-input", "base64-input", "bech32-input",
-  ]);
-
-  // Slider-driven fields: the UI provides a better input method (range
-  // sliders with defaults and arrow-key support), so no on-screen keyboard
-  // toggle is offered for them.
-  const SLIDER_DRIVEN_FIELDS = new Set([
-    "msig-m-number", "msig-n-number",
-  ]);
-
-  // Per-field keyboard layouts. A field listed here gets a purpose-built
-  // multi-row keyboard; everything else falls back to the full layout.
-  // Rows render as flex rows that fill the panel width; keeping each row's
-  // key count equal makes all keys approximately the same size.
-  // Lookup keys are field ids, or class selectors (prefixed with ".") for
-  // dynamically-created inputs that carry no id (msig co-signer fields).
-  const FIELD_CHARSETS = {
-    // Derivation path: digits on row 1; m / ' + backspace on row 2
-    "derivation-path": [
-      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-      ["m", "/", "'", "backspace"],
-    ],
-    // Vanity prefix: lowercase bech32 charset (full a-z + digits; the field
-    // itself live-filters invalid sequences). qwerty rows, backspace last.
-    "vanity-prefix": [
-      ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
-      ["a", "s", "d", "f", "g", "h", "j", "k", "l", "backspace"],
-      ["z", "x", "c", "v", "b", "n", "m", "1", "2", "3"],
-      ["4", "5", "6", "7", "8", "9", "0"],
-    ],
-    // Co-signer full derivation path (same charset as the Keys-tab path)
-    ".msig-full-path": [
-      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-      ["m", "/", "'", "backspace"],
-    ],
-    // Co-signer master fingerprint: 8 lowercase hex characters
-    ".msig-master-fingerprint": [
-      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-      ["a", "b", "c", "d", "e", "f", "backspace"],
-    ],
-    // Co-signer path components (purpose / network / account / child steps)
-    // inside each cosigner's "Advanced entry" disclosure. No id — class only.
-    ".msig-path-component-input": [
-      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-      ["'", "backspace"],
-    ],
-    // Silent payments: recipients (bech32 + BIP-321 URI + optional count)
-    "sp-recipients": [
-      ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
-      ["a", "s", "d", "f", "g", "h", "j", "k", "l", "backspace"],
-      ["z", "x", "c", "v", "b", "n", "m", "1", "2", "3"],
-      ["4", "5", "6", "7", "8", "9", "0", ":", "?", "="],
-      ["@", ".", "/", " ", "enter"],
-    ],
-    // Silent payments: BIP-352 vin JSON (quotes, braces, brackets, colons,
-    // commas, hex, derivation path)
-    "sp-send-vins": [
-      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-      ["a", "b", "c", "d", "e", "f", "m", "/", "'", "backspace"],
-      ["{", "}", "[", "]", "\"", ":", ",", " ", "enter"],
-    ],
-    "sp-verify-vins": [
-      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-      ["a", "b", "c", "d", "e", "f", "m", "/", "'", "backspace"],
-      ["{", "}", "[", "]", "\"", ":", ",", " ", "enter"],
-    ],
-    // Silent payments: taproot output keys (32-byte x-only hex)
-    "sp-verify-outputs": [
-      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-      ["a", "b", "c", "d", "e", "f", "backspace"],
-    ],
+  const excluded = new Set(["entropy-input", "pass", "key", "private-key-input",
+    "base64-input", "bech32-input", "msig-m-number", "msig-n-number"]);
+  const digits = "1234567890";
+  const paths = [digits, "m/'"];
+  const hex = [digits, "abcdef"];
+  const letters = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+  const symbols = [digits, "!@#$%^&*()", "-_=+[]{}", "\\|;:'\",.<>/?`~"];
+  const restricted = {
+    "derivation-path": paths,
+    ".msig-full-path": paths,
+    ".msig-master-fingerprint": hex,
+    ".msig-path-component-input": [digits],
+    "vanity-prefix": [digits, ...letters],
+    "sp-verify-outputs": [...hex, " \n"],
   };
+  let active = null, panel = null, spacer = null, mode = 0;
+  let numberDraft = null;
 
-  // Resolve the lookup key for a field: its id, or the first FIELD_CHARSETS
-  // class selector it matches (for id-less dynamic inputs).
-  function charsetKeyFor(input) {
-    if (input.id && FIELD_CHARSETS[input.id]) return input.id;
-    for (const key of Object.keys(FIELD_CHARSETS)) {
-      if (key.startsWith(".") && input.classList?.contains(key.slice(1))) return key;
+  function eligible(field) {
+    return field?.matches?.("textarea, input") &&
+      (field.tagName === "TEXTAREA" || /^(text|number|search|email|url|tel|password)$/.test(field.type)) &&
+      !field.matches(":disabled, [readonly]") && !excluded.has(field.id) &&
+      !field.closest("[hidden], [inert], [data-on-screen-keyboard]");
+  }
+
+  function layout(field) {
+    // A paired Harden checkbox supplies the apostrophe; show only the index.
+    if (field.closest(".field")?.querySelector('.derivation-harden input[type="checkbox"]')) return [digits];
+    if (restricted[field.id]) return restricted[field.id];
+    for (const selector of Object.keys(restricted)) {
+      if (selector[0] === "." && field.matches(selector)) return restricted[selector];
     }
-    return input.id || "";
-  }
-
-  function charsetFor(input) {
-    const key = charsetKeyFor(input);
-    if (FIELD_CHARSETS[key]) return FIELD_CHARSETS[key];
-    if (input.inputMode === "numeric" || input.type === "number") {
-      return [["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]];
+    if (field.type === "number" || /^(numeric|decimal|tel)$/.test(field.inputMode) || field.type === "tel") {
+      let extra = "";
+      if (field.inputMode === "decimal" || (field.type === "number" && (field.step === "any" || Number(field.step) % 1))) extra += ".";
+      if (field.type === "number" && (!field.hasAttribute("min") || Number(field.min) < 0)) extra += "-";
+      if (field.type === "tel" || field.inputMode === "tel") extra += "+*#";
+      return extra ? [digits, extra] : [digits];
     }
-    return null; // full layout
+    return null;
   }
 
-  function isEligibleInput(input) {
-    if (!input) return false;
-    // Textareas are eligible too (sp-recipients, sp-send-vins, etc.)
-    const isTextArea = input.tagName === "TEXTAREA";
-    // Dynamically-created inputs may have no id but a known class
-    const hasKnownClass = Object.keys(FIELD_CHARSETS).some(
-      (key) => key.startsWith(".") && input.classList?.contains(key.slice(1)),
-    );
-    if (!input.id && !hasKnownClass) return false;
-    if (input.id && EXISTING_KEYBOARD_FIELDS.has(input.id)) return false;
-    if (input.id && SLIDER_DRIVEN_FIELDS.has(input.id)) return false;
-    if (!isTextArea) {
-      const type = (input.type || "text").toLowerCase();
-      if (!["text", "number"].includes(type)) return false;
+  function hide() {
+    if (panel) panel.hidden = true;
+    if (spacer) spacer.style.height = "0px";
+    active = null;
+    numberDraft = null;
+  }
+
+  function fit() {
+    if (!active || !panel || panel.hidden) return;
+    if (!active.isConnected || !eligible(active)) return hide();
+    spacer.style.height = panel.getBoundingClientRect().height + "px";
+    const field = active.getBoundingClientRect(), dock = panel.getBoundingClientRect();
+    // Scroll the nearest scrolling container, then clear the dock if necessary.
+    if (field.bottom > dock.top || field.top < 0) {
+      active.scrollIntoView({ block: "center", behavior: "instant" });
+      const bottom = active.getBoundingClientRect().bottom;
+      if (bottom > dock.top - 8) window.scrollBy(0, bottom - dock.top + 8);
     }
-    if (input.disabled || input.readOnly) return false;
-    return true;
   }
 
-  // Stable identity for a field: its id, or a synthetic key for id-less
-  // dynamic inputs (class + data-path-index if present, else sibling index).
-  function fieldKeyFor(input) {
-    if (input.id) return input.id;
-    const known = Object.keys(FIELD_CHARSETS).find(
-      (key) => key.startsWith(".") && input.classList?.contains(key.slice(1)),
-    );
-    if (!known) return "";
-    // Path-component inputs carry data-path-index — use it for stability
-    // across re-renders (replaceChildren cycles create new DOM nodes).
-    if (input.dataset.pathIndex !== undefined) return known + ":" + input.dataset.pathIndex;
-    const siblings = Array.from(document.querySelectorAll(known)).filter((el) => el.tagName === "INPUT");
-    return known + ":" + siblings.indexOf(input);
+  function render() {
+    const limited = layout(active);
+    const rows = limited || (mode === 2 ? symbols : [digits, ...letters.map(row => mode === 1 ? row.toUpperCase() : row)]);
+    panel.replaceChildren();
+    panel.classList.toggle("general-osk-full", !limited);
+    function row(keys) {
+      const element = document.createElement("div");
+      element.className = "general-osk-key-row";
+      for (const key of keys) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "seed-keyboard-key";
+        button.dataset.generalKey = key;
+        const label = ({ backspace: "Backspace", mode: "aA1", hide: "Hide keyboard", " ": "Space", "\n": "Enter" })[key] || key;
+        button.textContent = key === "backspace" ? "⌫" : key === "hide" ? "⌄" : label;
+        button.setAttribute("aria-label", label);
+        element.append(button);
+      }
+      panel.append(element);
+    }
+    const keysByRow = rows.map(keys => Array.from(keys));
+    if (limited) {
+      keysByRow[keysByRow.length - 1].push("backspace", "hide");
+    } else {
+      keysByRow[1].push("backspace");
+      keysByRow[keysByRow.length - 1].push("mode", " ", ...(active.tagName === "TEXTAREA" ? ["\n"] : []), "hide");
+    }
+    if (limited) {
+      for (const keys of keysByRow) row(keys);
+    } else {
+      // Balance the complete layout instead of wrapping individual QWERTY rows.
+      const keys = keysByRow.flat();
+      panel.style.setProperty("--osk-columns-wide", Math.ceil(keys.length / 4));
+      panel.style.setProperty("--osk-columns-narrow", Math.ceil(keys.length / 5));
+      row(keys);
+    }
+    panel.hidden = false;
+    requestAnimationFrame(fit);
   }
 
-  function buildToggle(input) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = TOGGLE_CLASS + " seed-keyboard-toggle";
-    btn.dataset.generalOskToggle = fieldKeyFor(input);
-    btn.setAttribute("aria-label", "Show on-screen keyboard");
-    btn.setAttribute("aria-expanded", "false");
-    btn.innerHTML = toggleSVG;
-    btn.addEventListener("click", function (e) {
-      e.preventDefault();
-      toggleKeyboard(input);
-    });
-    return btn;
-  }
-
-  function buildKeyboardPanel(charset) {
-      const panel = document.createElement("div");
+  function show(field) {
+    if (!eligible(field)) return hide();
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "general-osk";
       panel.className = "seed-keyboard general-osk-panel";
-      panel.id = KEYBOARD_ID;
       panel.setAttribute("data-on-screen-keyboard", "");
       panel.setAttribute("role", "group");
       panel.setAttribute("aria-label", "On-screen keyboard");
-      panel.hidden = true;
-
-      if (charset) {
-        // Purpose-built multi-row keyboard for this field's layout.
-        // Every row is a general-osk-key-row (flex, fills panel width);
-        // equal key counts per row = uniform key sizes.
-        let html = "";
-        for (const row of charset) {
-          html += '<div class="seed-keyboard-row general-osk-key-row">';
-          for (const k of row) {
-            if (k === "backspace") {
-              html += `<button type="button" class="seed-keyboard-key seed-keyboard-delete" data-general-key="backspace" aria-label="Backspace"><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button>`;
-            } else {
-              html += `<button type="button" class="seed-keyboard-key" data-general-key="${k}" aria-label="Enter ${k}">${k}</button>`;
-            }
-          }
-          html += '</div>';
-        }
-        panel.innerHTML = html;
-      } else {
-      // Full layout: matches existing seed-keyboard structure
-      // Row 1: numbers + symbols, Row 2: qwerty, Row 3: asdf, Row 4: zxcv + mode + space
-      const numbers = "1 2 3 4 5 6 7 8 9 0 / ' \u232b".split(" ");
-      const row1 = "q w e r t y u i o p".split(" ");
-      const row2 = "a s d f g h j k l".split(" ");
-      const row3 = "z x c v b n m".split(" ");
-
-      let html = '<div class="seed-keyboard-row">';
-      for (const k of numbers) {
-        if (k === "\u232b") {
-          html += `<button type="button" class="seed-keyboard-key seed-keyboard-delete" data-general-key="backspace" aria-label="Backspace"><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button>`;
-        } else {
-          html += `<button type="button" class="seed-keyboard-key" data-general-key="${k}">${k}</button>`;
-        }
-      }
-      html += '</div><div class="seed-keyboard-row">';
-      for (const k of row1) {
-        html += `<button type="button" class="seed-keyboard-key" data-general-key="${k}">${k}</button>`;
-      }
-      html += '</div><div class="seed-keyboard-row">';
-      for (const k of row2) {
-        html += `<button type="button" class="seed-keyboard-key" data-general-key="${k}">${k}</button>`;
-      }
-      html += '</div><div class="seed-keyboard-row">';
-      for (const k of row3) {
-        html += `<button type="button" class="seed-keyboard-key" data-general-key="${k}">${k}</button>`;
-      }
-      html += `<button type="button" class="seed-keyboard-mode" data-general-key="mode" aria-label="Change keyboard mode">aA1</button>`;
-      html += `<button type="button" class="seed-keyboard-space" data-general-key=" " aria-label="Enter space">space</button>`;
-      html += '</div>';
-      panel.innerHTML = html;
-    }
-    return panel;
-  }
-
-  function showKeyboard(input) {
-    activeInput = input;
-    let panel = document.getElementById(KEYBOARD_ID);
-
-    // Determine this field's character set (null = full layout)
-    const charset = charsetFor(input);
-
-    // Rebuild panel if charset changed or doesn't exist
-    const charsetId = charset ? charset.map((r) => r.join("")).join("|") : "full";
-    if (!panel || panel.dataset.charset !== charsetId) {
-      if (panel) panel.remove();
-      panel = buildKeyboardPanel(charset);
-      panel.dataset.charset = charsetId;
-      document.body.append(panel);
-      // Wire key clicks — preventDefault on mousedown so the input never
-      // loses focus (selectionStart/End stay valid for applyKey)
-      panel.addEventListener("mousedown", function (e) {
-        if (e.target.closest("[data-general-key]")) e.preventDefault();
+      spacer = document.createElement("div");
+      spacer.setAttribute("aria-hidden", "true");
+      document.body.append(spacer, panel);
+      // Retain focus/selection on mouse and touch; click remains the activation.
+      panel.addEventListener("pointerdown", event => { if (event.target.closest("button")) event.preventDefault(); });
+      panel.addEventListener("mousedown", event => { if (event.target.closest("button")) event.preventDefault(); });
+      panel.addEventListener("click", event => {
+        // Switching layouts removes the clicked button before document sees it.
+        event.stopPropagation();
+        const button = event.target.closest("[data-general-key]");
+        if (button) { event.preventDefault(); apply(button.dataset.generalKey); }
       });
-      panel.addEventListener("click", function (e) {
-        const key = e.target.closest("[data-general-key]");
-        if (!key) return;
-        e.preventDefault();
-        applyKey(key.dataset.generalKey);
-      });
+      new ResizeObserver(fit).observe(panel);
     }
-
-    // Show the keyboard docked at the bottom of the viewport
-    panel.hidden = false;
-    keyboardVisible = true;
-    panel.dataset.activeFor = fieldKeyFor(input);
-    document.querySelectorAll(`[data-general-osk-toggle]`).forEach((b) => {
-      b.setAttribute("aria-expanded", "false");
-      b.setAttribute("aria-label", "Show on-screen keyboard");
-    });
-    document.querySelectorAll(`[data-general-osk-toggle="${fieldKeyFor(input)}"]`).forEach((b) => {
-      b.setAttribute("aria-expanded", "true");
-      b.setAttribute("aria-label", "Hide on-screen keyboard");
-    });
-
-    // Page-shrink: add bottom padding so the keyboard doesn't cover content
-    document.body.style.paddingBottom = (panel.offsetHeight || 240) + "px";
+    if (active !== field) { mode = 0; numberDraft = null; }
+    active = field;
+    render();
   }
 
-  function hideKeyboard() {
-    const panel = document.getElementById(KEYBOARD_ID);
-    if (panel) panel.hidden = true;
-    keyboardVisible = false;
-    activeInput = null;
-    document.body.style.paddingBottom = "";
-    document.querySelectorAll(`[data-general-osk-toggle]`).forEach((b) => {
-      b.setAttribute("aria-expanded", "false");
-      b.setAttribute("aria-label", "Show on-screen keyboard");
-    });
-  }
-
-  function toggleKeyboard(input) {
-    const panel = document.getElementById(KEYBOARD_ID);
-    if (keyboardVisible && panel && panel.dataset.activeFor === fieldKeyFor(input)) {
-      hideKeyboard();
-    } else {
-      showKeyboard(input);
+  function apply(key) {
+    const field = active;
+    if (!field?.isConnected || !eligible(field)) return hide();
+    if (key === "hide") return hide();
+    if (key === "mode") { mode = (mode + 1) % 3; return render(); }
+    const value = field.type === "number" && numberDraft?.value === field.value ? numberDraft.raw : field.value;
+    const container = field.closest(".msig-path-components");
+    const componentIndex = field.dataset.pathIndex;
+    // Number/email inputs have no selection API: append/delete at the end.
+    let start = field.selectionStart ?? value.length;
+    const end = field.selectionEnd ?? value.length;
+    if (key === "backspace" && start === end) {
+      start -= Array.from(value.slice(0, start)).pop()?.length || 0;
+    }
+    const text = key === "backspace" ? "" : key;
+    const next = value.slice(0, start) + text + value.slice(end);
+    if (field.type === "number" && !/^-?\d*\.?\d*$/.test(next)) return;
+    if (text && field.maxLength >= 0 && next.length > field.maxLength) return;
+    const inputType = key === "backspace" ? "deleteContentBackward" : "insertText";
+    if (!field.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType, data: text || null }))) return;
+    field.value = next;
+    if (field.type === "number") numberDraft = { raw: next, value: field.value };
+    if (field.selectionStart !== null) field.setSelectionRange(start + text.length, start + text.length);
+    field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType, data: text || null }));
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    // Upstream may replace a dynamic component on input: resolve within its
+    // original container, never by a globally ambiguous component index.
+    if (!field.isConnected) {
+      const replacement = container?.querySelector(`[data-path-index="${CSS.escape(componentIndex || "")}"]`);
+      if (!eligible(replacement)) return hide();
+      active = replacement;
+      replacement.focus({ preventScroll: true });
+      replacement.setSelectionRange(start + text.length, start + text.length);
     }
   }
 
-  function applyKey(key) {
-    if (!activeInput) return;
-    const input = activeInput;
-    const start = input.selectionStart || 0;
-    const end = input.selectionEnd || 0;
-    const value = input.value || "";
-
-    if (key === "backspace") {
-      if (start === end && start > 0) {
-        input.value = value.slice(0, start - 1) + value.slice(end);
-        input.selectionStart = input.selectionEnd = start - 1;
-      } else {
-        input.value = value.slice(0, start) + value.slice(end);
-        input.selectionStart = input.selectionEnd = start;
-      }
-    } else if (key === "mode") {
-      // TODO: cycle between lower/upper/numeric (future enhancement)
-      return;
-    } else if (key === "enter") {
-      // Insert newline at cursor (textareas only; harmless on inputs)
-      input.value = value.slice(0, start) + "\n" + value.slice(end);
-      input.selectionStart = input.selectionEnd = start + 1;
-    } else {
-      input.value = value.slice(0, start) + key + value.slice(end);
-      input.selectionStart = input.selectionEnd = start + key.length;
-    }
-
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    input.focus();
-  }
-
-  function attachToggleIfEligible(input) {
-    if (!isEligibleInput(input)) return;
-    if (input.dataset.generalOskAttached) return;
-    input.dataset.generalOskAttached = "1";
-    // No toggle button: the keyboard auto-shows on focus (phone pattern).
-    // The field's own focus event is the trigger; the toggle is redundant.
-  }
-
-  function initGeneralOSK() {
-    if (document.getElementById(KEYBOARD_ID)) return; // already init'd
-
-    // Existing inputs and textareas
-    document.querySelectorAll("input, textarea").forEach(attachToggleIfEligible);
-
-    // Dynamically-created fields (e.g. multisig co-signer rows render after
-    // keys are pasted) get toggles as they appear. Also handles re-renders:
-    // replaceChildren() destroys inputs AND their toggles, so we re-scan
-    // the added container for inputs that lost their toggle.
-    if (typeof MutationObserver === "function") {
-      new MutationObserver(function (mutations) {
-        for (const m of mutations) {
-          m.addedNodes.forEach(function (node) {
-            if (node.nodeType !== 1) return;
-            if (node.tagName === "INPUT" || node.tagName === "TEXTAREA") attachToggleIfEligible(node);
-            else if (node.querySelectorAll) node.querySelectorAll("input, textarea").forEach(attachToggleIfEligible);
-          });
-          // Re-render safety: if a container was replaced, its new inputs
-          // may not have toggles yet. Scan the added container's inputs.
-          if (m.target && m.target.querySelectorAll) {
-            m.target.querySelectorAll("input, textarea").forEach(attachToggleIfEligible);
-          }
-        }
-      }).observe(document.body, { childList: true, subtree: true });
-    }
-
-    // Auto-show keyboard when an eligible field receives focus (phone pattern).
-    // The toggle button still works for explicit show/hide.
-    document.addEventListener("focusin", function (e) {
-      if (isEligibleInput(e.target)) {
-        showKeyboard(e.target);
-      }
-    });
-
-    // Hide keyboard when clicking outside an input
-    document.addEventListener("click", function (e) {
-      if (!keyboardVisible) return;
-      if (e.target.closest("[data-general-osk-toggle]")) return;
-      if (e.target.closest("#" + KEYBOARD_ID)) return;
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-      // Click elsewhere — hide
-      hideKeyboard();
-    });
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initGeneralOSK);
-  } else {
-    initGeneralOSK();
-  }
+  document.addEventListener("focusin", event => {
+    if (panel?.contains(event.target)) return;
+    show(event.target);
+  });
+  document.addEventListener("click", event => {
+    if (panel?.contains(event.target)) return;
+    if (eligible(event.target)) {
+      if (active !== event.target) show(event.target);
+    } else hide();
+  });
+  document.addEventListener("keydown", event => { if (event.key === "Escape") hide(); });
+  window.addEventListener("resize", fit);
 })();
-// ==== end general on-screen keyboard ====

@@ -1,123 +1,96 @@
-# Proposal: On-screen keyboard for all text/number input fields on touch devices
+# Draft PR: opt-in touchscreen keyboard for keyboard-less kiosks
 
-## Problem
+Status: local proposal only. Do not open or reopen an upstream PR until
+explicitly authorized. This document is the draft PR description.
 
-EntropyLab already solves the **hard problem**: restricted-charset on-screen
-keyboards for sensitive key-material inputs (seed phrase, BIP39 passphrase,
-private key, Base64, Bech32). These keyboards are curated input surfaces that
-prevent invalid characters — a security feature, not a UX convenience. They're
-the right tool for their job.
+## Summary
 
-But there's a **missing use case**: what if there's no system keyboard at all?
+Add a small, isolated on-screen keyboard for touch-only appliances such as
+RockOS-Pi (Raspberry Pi running cage/Cog/WPE WebKit). Such deployments have
+no physical or system keyboard for fields not covered by EntropyLab's
+existing specialized keyboards.
 
-The existing keyboards cover fields where *security demands* a restricted
-input surface. They don't cover fields where the assumption was simply "the
-platform provides a keyboard." On a phone, the system IME handles the rest.
-On a desktop, the physical keyboard. On an **air-gapped touch kiosk** —
-EntropyLab's stated deployment target — those ~25 non-sensitive fields are
-inaccessible.
+**Normal EntropyLab loads are unchanged.** The feature activates only when
+the launch URL contains `?osk=1`. RockOS-Pi supplies that opt-in in its
+launcher; ordinary desktop, phone and tablet users receive no new keyboard,
+field toggles, focus listeners or layout changes. There is no user-agent
+sniffing or unreliable attempt to detect the absence of a system keyboard.
+Other deployments can explicitly opt in too: this is not a RockOS-specific
+browser check, and attaching a physical keyboard does not disable the opt-in.
 
-The gap isn't an oversight in a rapidly evolving codebase. It's a
-**complementary use case** that the existing architecture doesn't address:
-a general-purpose on-screen keyboard for non-sensitive inputs on touch-only
-devices where no system keyboard exists.
+## Small, additive integration
 
-## Proposed approach
+- One self-contained module, `src/js/general-osk.js`.
+- One import in the existing application entry point.
+- One scoped CSS block reusing upstream panel/key styling.
+- No new dependencies, runtime requests, storage or generated entropy.
+- No changes to upstream cryptography, parsing or derivation functions.
+- No new per-field toggle buttons or modifications to existing keyboard
+  toggles. Known upstream keyboard fields (`entropy-input`, `pass`, `key`,
+  etc.) and slider-driven multisig controls are excluded.
 
-**Add a lightweight, general-purpose on-screen keyboard for non-sensitive
-text/number inputs, shown only on touch devices.**
+The goal is a minimal integration surface, not a claim of zero added code:
+reviewable keyboard logic, documentation and browser regression coverage
+are included. The app remains a self-contained HTML artifact.
 
-### Detection
+## Interaction and responsive layouts
 
-Use `window.matchMedia("(pointer: coarse)")` or `"ontouchstart" in window`
-to detect touch-only devices. On desktop/laptop, nothing changes — no
-keyboard button appears, no DOM added. This keeps the hosted site
-unaffected.
+A shared bottom-docked panel appears when an eligible field receives focus.
+Delegated events cover newly added/id-less inputs and textareas without
+registration or whole-page mutation scanning. Disabled, read-only and
+non-text controls are excluded.
 
-### Scope
+Numeric/decimal/telephone attributes select limited layouts; a small mapping
+covers domain-specific paths and fingerprints. Fields with a paired Harden
+checkbox use digits, without a redundant apostrophe key. Full path fields
+retain their path characters. New fields gain generic input automatically;
+new domain-specific grammars may still need a small layout mapping.
 
-Add the keyboard toggle button to `<input>` elements that:
-- Are `type="text"`, `type="number"`, or have no type (defaults to text)
-- Are **not** already covered by an existing on-screen keyboard (seed,
-  passphrase, private key, Base64, Bech32)
-- Are not `disabled`, `readonly`, or `hidden`
-- Are not `type="checkbox"`, `type="radio"`, `type="hidden"`, etc.
+Full keyboards offer lowercase, uppercase, symbols, space and textarea
+newlines. A balanced grid uses four rows on wider screens and five on narrow
+screens, rather than preserving QWERTY row boundaries at the cost of overflow.
+Restricted layouts remain compact. The panel has bounded height and can
+scroll on short screens. A measured spacer creates scroll room and focus
+handling reveals the edited field; it does not resize the browser viewport.
 
-### Keyboard layout
+Text editing respects selection, maxlength and cancelable beforeinput.
+Synthetic input/change events feed existing upstream validation. Number and
+email inputs use end editing because browsers expose no selection API for
+those types. Multisig component replacement is resolved within its original
+container, avoiding collisions between cosigners.
 
-A simple numeric + minimal-symbol layout is sufficient for the fields
-in scope (derivation paths, numeric parameters):
+## Byte-for-byte upstream integration for RockOS-Pi
 
-```
-1 2 3 4 5 6 7 8 9 0
-/ ' ⌫
-```
+After upstream acceptance, RockOS-Pi can pin an upstream release/source commit,
+fetch the corresponding built HTML, verify its expected SHA-256, and install
+those exact bytes without adding kiosk patches or injecting scripts.
 
-For fields that also need letters (e.g. `msig-account` is `type="text"`),
-a full lowercase layout with a mode toggle (aA1) — same pattern as the
-existing passphrase keyboard.
+The launcher opens:
 
-### Implementation shape
+`file:///opt/rockos/app/entropylab.html?osk=1`
 
-Following the AGENTS.md guidance on reuse:
+The query parameter changes runtime behavior, not file contents or the file
+hash. One upstream artifact therefore serves both normal users and opted-in
+kiosks. Hash verification establishes byte identity with a reference artifact;
+authenticating that reference requires trusted release provenance, and signed
+checksums/attestations if upstream provides them. A source commit hash is not
+the same thing as an HTML artifact hash.
 
-1. **One CSS rule** for the toggle button (extend the existing
-   `.seed-keyboard-toggle` paradigm, or add a `.general-keyboard-toggle`
-   alongside it)
-2. **One builder function** (`hodlGeneralKeyboardToggleMarkup`) alongside
-   the existing `hodlKeyboardToggleMarkup`
-3. **One keyboard renderer** (`hodlGeneralKeyboardMarkup`) alongside
-   `hodlKeyboardMarkup`
-4. **One binding function** (`hodlBindGeneralKeyboard`) alongside
-   `hodlBindPassphraseKeyboard`
-5. **One init call** in `hodlBoot()` that scans for eligible inputs and
-   attaches toggle buttons — event delegation, same pattern as the
-   existing QR-references module (no per-field registration)
+Until merged, the deployed build is explicitly a **fork build**, not an
+upstream-identical artifact containing this feature.
 
-### What stays the same
+## Verification and current limitations
 
-- The existing specialized keyboards (seed, passphrase, private key,
-  Base64, Bech32) are untouched — their security properties (restricted
-  charset, no system IME) are critical and must not be weakened
-- The `data-on-screen-keyboard` attribute system is reused
-- The toggle button SVG icon is the same visual language
-- The keyboard panel CSS (`.seed-keyboard`) is extended, not duplicated
-- No new dependencies — pure DOM, same as the existing system
-
-### What this does NOT do
-
-- Does not replace the OS/compositor keyboard (wvkbd, system IME) —
-  those are complementary; this is app-level for fields that don't need
-  the restricted-charset keyboards
-- Does not add keyboards to sensitive fields — the existing ones stay
-- Does not change behavior on non-touch devices
-
-## Why this matters for EntropyLab
-
-EntropyLab's tagline is "Self-contained, air-gapped Bitcoin key and
-wallet calculator." The air-gapped use case is overwhelmingly touch-only
-tablets and kiosks. Today, a user on such a device can generate entropy
-(dice, card draws) and enter seed phrases (via the specialized keyboard),
-but **cannot**:
-
-- Set a custom derivation path
-- Configure multisig parameters
-- Adjust vanity search parameters
-- Set BIP85 parameters
-
-These are real features that are simply inaccessible on the target
-platform. This PR makes them usable.
-
-## Testing
-
-- Unit tests for the keyboard builder and binding (same shape as existing
-  tests)
-- Browser suite: verify toggle buttons appear on touch simulation,
-  absent on non-touch
-- Manual: verify on a RockOS kiosk (cage + wlroots + touchscreen)
-
-## Scope of this PR
-
-This is a **feature addition**, not a refactor. No existing code is
-restructured — the new keyboard system is additive, alongside the
-existing one. The smallest change that covers all eligible fields.
+- `npm run build` passes.
+- `node --test test/general-osk.browser.mjs` exercises real Chromium editing,
+  opt-in/default-off behavior, known upstream exclusions, new fields,
+  replacement multisig components, touch activation and horizontal geometry
+  at 320, 480, 800, 1024 and 1920 pixel viewport widths.
+- The user has tested the prototype on RockOS-Pi and approved the current
+  layout. Broad device and WPE regression coverage is still desirable.
+- Latest full `npm test`: 1,323 passed, 2 failed, 6 skipped. Failures are in
+  the headless Chrome browser harness (watchdog timeout). This is not a
+  fully green suite; do not represent focused tests as clearing those failures.
+- No claim that this keyboard detects an attached physical keyboard, proves
+  an air gap, prevents keylogging, or changes existing security guarantees.
+- Keep the work as a fork/local draft until explicitly authorized to submit.

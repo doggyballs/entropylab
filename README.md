@@ -13,6 +13,27 @@ Official website: [entropylab.online](https://entropylab.online)
 
 ## Features
 
+### Optional kiosk touchscreen keyboard
+
+On kiosks without a system keyboard, open `entropylab.html?osk=1`
+(for example, `file:///opt/rockos/app/entropylab.html?osk=1` on RockOS-Pi).
+This explicitly enables a shared bottom-docked keyboard on field focus.
+Normal URLs leave the feature inactive: no added controls or listeners.
+Do not enable it on phones/tablets already providing a system keyboard.
+
+Existing upstream keyboards and slider-driven multisig controls stay unchanged.
+Other editable inputs and textareas, including dynamically added fields, are
+handled automatically. Numeric input attributes select limited layouts;
+derivation paths and fingerprints have small field-specific layouts.
+The full keyboard cycles lowercase/uppercase/symbols with `aA1`.
+Use the down-arrow key or Escape to dismiss it. Full layouts use four rows
+on wider screens and five on narrow screens; short screens can scroll the
+keyboard. Number/email inputs support end editing,
+since browsers do not expose a caret-selection API for those input types.
+
+Focused browser checks: `node --test test/general-osk.browser.mjs`
+(requires Chromium, or `CHROME_BINARY` pointing to Chrome).
+
 Clearing a Key or Multisig station cancels its pending derivation. Leaving
 the page clears rendered seed-word copies and prevents a late derivation or
 import from restoring cleared secrets. Locking the journal also invalidates
