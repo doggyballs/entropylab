@@ -27,10 +27,19 @@
     "entropy-input", "pass", "private-key-input", "base64-input", "bech32-input",
   ]);
 
+  // Slider-driven fields: the UI provides a better input method (range
+  // sliders with defaults and arrow-key support), so no on-screen keyboard
+  // toggle is offered for them.
+  const SLIDER_DRIVEN_FIELDS = new Set([
+    "msig-m-number", "msig-n-number",
+  ]);
+
   // Per-field keyboard layouts. A field listed here gets a purpose-built
   // multi-row keyboard; everything else falls back to the full layout.
   // Rows render as flex rows that fill the panel width; keeping each row's
   // key count equal makes all keys approximately the same size.
+  // Lookup keys are field ids, or class selectors (prefixed with ".") for
+  // dynamically-created inputs that carry no id (msig co-signer fields).
   const FIELD_CHARSETS = {
     // Derivation path: digits on row 1; m / ' + backspace on row 2
     "derivation-path": [
@@ -45,10 +54,37 @@
       ["z", "x", "c", "v", "b", "n", "m", "1", "2", "3"],
       ["4", "5", "6", "7", "8", "9", "0"],
     ],
+    // Co-signer full derivation path (same charset as the Keys-tab path)
+    ".msig-full-path": [
+      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+      ["m", "/", "'", "backspace"],
+    ],
+    // Co-signer master fingerprint: 8 lowercase hex characters
+    ".msig-master-fingerprint": [
+      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+      ["a", "b", "c", "d", "e", "f", "backspace"],
+    ],
+    // Co-signer path components (purpose / network / account / child steps)
+    // inside each cosigner's "Advanced entry" disclosure. No id — class only.
+    ".msig-path-component-input": [
+      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+      ["'", "backspace"],
+    ],
   };
 
+  // Resolve the lookup key for a field: its id, or the first FIELD_CHARSETS
+  // class selector it matches (for id-less dynamic inputs).
+  function charsetKeyFor(input) {
+    if (input.id && FIELD_CHARSETS[input.id]) return input.id;
+    for (const key of Object.keys(FIELD_CHARSETS)) {
+      if (key.startsWith(".") && input.classList?.contains(key.slice(1))) return key;
+    }
+    return input.id || "";
+  }
+
   function charsetFor(input) {
-    if (FIELD_CHARSETS[input.id]) return FIELD_CHARSETS[input.id];
+    const key = charsetKeyFor(input);
+    if (FIELD_CHARSETS[key]) return FIELD_CHARSETS[key];
     if (input.inputMode === "numeric" || input.type === "number") {
       return [["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]];
     }
@@ -56,19 +92,40 @@
   }
 
   function isEligibleInput(input) {
-    if (!input || !input.id) return false;
-    if (EXISTING_KEYBOARD_FIELDS.has(input.id)) return false;
+    if (!input) return false;
+    // Dynamically-created inputs may have no id but a known class
+    const hasKnownClass = Object.keys(FIELD_CHARSETS).some(
+      (key) => key.startsWith(".") && input.classList?.contains(key.slice(1)),
+    );
+    if (!input.id && !hasKnownClass) return false;
+    if (input.id && EXISTING_KEYBOARD_FIELDS.has(input.id)) return false;
+    if (input.id && SLIDER_DRIVEN_FIELDS.has(input.id)) return false;
     const type = (input.type || "text").toLowerCase();
     if (!["text", "number"].includes(type)) return false;
     if (input.disabled || input.readOnly) return false;
     return true;
   }
 
+  // Stable identity for a field: its id, or a synthetic key for id-less
+  // dynamic inputs (class + data-path-index if present, else sibling index).
+  function fieldKeyFor(input) {
+    if (input.id) return input.id;
+    const known = Object.keys(FIELD_CHARSETS).find(
+      (key) => key.startsWith(".") && input.classList?.contains(key.slice(1)),
+    );
+    if (!known) return "";
+    // Path-component inputs carry data-path-index — use it for stability
+    // across re-renders (replaceChildren cycles create new DOM nodes).
+    if (input.dataset.pathIndex !== undefined) return known + ":" + input.dataset.pathIndex;
+    const siblings = Array.from(document.querySelectorAll(known)).filter((el) => el.tagName === "INPUT");
+    return known + ":" + siblings.indexOf(input);
+  }
+
   function buildToggle(input) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = TOGGLE_CLASS + " seed-keyboard-toggle";
-    btn.dataset.generalOskToggle = input.id;
+    btn.dataset.generalOskToggle = fieldKeyFor(input);
     btn.setAttribute("aria-label", "Show on-screen keyboard");
     btn.setAttribute("aria-expanded", "false");
     btn.innerHTML = toggleSVG;
@@ -165,7 +222,8 @@
       });
     }
 
-    if (keyboardVisible && panel.dataset.activeFor === input.id) {
+    const fieldKey = fieldKeyFor(input);
+    if (keyboardVisible && panel.dataset.activeFor === fieldKey) {
       // Hide
       panel.hidden = true;
       keyboardVisible = false;
@@ -178,8 +236,8 @@
       // Show
       panel.hidden = false;
       keyboardVisible = true;
-      panel.dataset.activeFor = input.id;
-      document.querySelectorAll(`[data-general-osk-toggle="${input.id}"]`).forEach((b) => {
+      panel.dataset.activeFor = fieldKey;
+      document.querySelectorAll(`[data-general-osk-toggle="${fieldKey}"]`).forEach((b) => {
         b.setAttribute("aria-expanded", "true");
         b.setAttribute("aria-label", "Hide on-screen keyboard");
       });
@@ -192,7 +250,7 @@
       // panel below the whole grid at full content width.
       const field = input.closest("label.field, .field") || input.parentElement;
       const row = field && field.closest(".key-settings-row");
-      const grid = field && field.closest(".vanity-grid, .derivation-advanced-fields, .bip85-grid");
+      const grid = field && field.closest(".vanity-grid, .derivation-advanced-fields, .bip85-grid, .msig-origin-fields, .msig-path-components");
       if (row && row.parentNode) {
         row.parentNode.insertBefore(panel, row.nextSibling);
         // Column detection: compare the field against the row's first grid child
@@ -245,23 +303,44 @@
     input.focus();
   }
 
+  function attachToggleIfEligible(input) {
+    if (!isEligibleInput(input)) return;
+    if (input.dataset.generalOskAttached) return;
+    input.dataset.generalOskAttached = "1";
+
+    // Toggle sits directly beneath the input (inside the field container,
+    // before any help note) so it visually belongs to the field it opens
+    if (input.parentElement) {
+      input.insertAdjacentElement("afterend", buildToggle(input));
+    }
+  }
+
   function initGeneralOSK() {
     if (document.getElementById(KEYBOARD_ID)) return; // already init'd
 
-    // Find all eligible inputs and add toggle buttons
-    document.querySelectorAll("input").forEach(function (input) {
-      if (!isEligibleInput(input)) return;
-      if (input.dataset.generalOskAttached) return;
-      input.dataset.generalOskAttached = "1";
+    // Existing inputs
+    document.querySelectorAll("input").forEach(attachToggleIfEligible);
 
-      // Toggle sits directly beneath the input (inside the field container,
-      // before any help note) so it visually belongs to the field it opens
-      const wrapper = input.parentElement;
-      if (wrapper) {
-        const toggle = buildToggle(input);
-        input.insertAdjacentElement("afterend", toggle);
-      }
-    });
+    // Dynamically-created fields (e.g. multisig co-signer rows render after
+    // keys are pasted) get toggles as they appear. Also handles re-renders:
+    // replaceChildren() destroys inputs AND their toggles, so we re-scan
+    // the added container for inputs that lost their toggle.
+    if (typeof MutationObserver === "function") {
+      new MutationObserver(function (mutations) {
+        for (const m of mutations) {
+          m.addedNodes.forEach(function (node) {
+            if (node.nodeType !== 1) return;
+            if (node.tagName === "INPUT") attachToggleIfEligible(node);
+            else if (node.querySelectorAll) node.querySelectorAll("input").forEach(attachToggleIfEligible);
+          });
+          // Re-render safety: if a container was replaced, its new inputs
+          // may not have toggles yet. Scan the added container's inputs.
+          if (m.target && m.target.querySelectorAll) {
+            m.target.querySelectorAll("input").forEach(attachToggleIfEligible);
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    }
 
     // Hide keyboard when clicking outside an input
     document.addEventListener("click", function (e) {
