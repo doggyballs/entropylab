@@ -201,7 +201,14 @@
         panel.classList.toggle("general-osk-left", inLeftColumn);
       } else if (grid && grid.parentNode) {
         grid.parentNode.insertBefore(panel, grid.nextSibling);
-        panel.classList.remove("general-osk-left");
+        // Column awareness for multi-column grids (e.g. the vanity params
+        // grid): justify toward the field's own grid column. Fields in the
+        // first half of the grid's visible columns get a left-justified
+        // keyboard; later columns stay right-justified.
+        const visible = Array.from(grid.children).filter((c) => !c.hidden);
+        const fieldIndex = visible.indexOf(field);
+        const inLeftColumn = fieldIndex !== -1 && fieldIndex < visible.length / 2;
+        panel.classList.toggle("general-osk-left", inLeftColumn);
       } else if (field && field.parentNode) {
         field.parentNode.insertBefore(panel, field.nextSibling);
         panel.classList.remove("general-osk-left");
