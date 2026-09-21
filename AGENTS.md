@@ -95,3 +95,81 @@ scripts, or transaction/PSBT parsing:
 
 Documentation-only and presentation-only changes do not need test vectors
 solely to satisfy this section.
+
+## Fork purpose (doggyballs/entropylab — branch `osk-general-keyboard`)
+
+This fork exists to develop and validate a **general on-screen keyboard
+(OSK) for touch-only kiosks**, targeting the [RockOS-Pi](https://github.com/doggyballs/RockOS-Pi)
+appliance (Raspberry Pi 5 + touch panel, cage + WPE WebKit kiosk). The work
+will be proposed upstream as a PR when ready.
+
+### Design goals (in priority order)
+
+1. **Unobtrusive to the codebase** — one self-contained module
+   (`src/js/general-osk.js`), one import line in `src/js/app.js`, one marked
+   CSS block at the end of `src/css/styles.css`. No edits to upstream
+   functions, markup, or the existing keyboard system.
+2. **Invisible to non-kiosk users** — desktop users see nothing (zero DOM,
+   zero layout change). Phones/tablets are excluded too: they have a system
+   IME, and stacking our keyboard on top of it is worse than none. The gate
+   is `(pointer: coarse)` AND a non-mobile UA (kiosk heuristic).
+3. **Reuse the existing visual language** — `.seed-keyboard` panel chrome,
+   `.seed-keyboard-key` styling, the same toggle icon pattern; the OSK
+   renders identically to upstream's built-in restricted-charset keyboards.
+4. **No per-field maintenance** — eligibility, charsets, and positioning
+   are automatic; adding a field upstream should not require a fork change.
+
+### Architecture (current state)
+
+- **Single bottom-docked panel** (phone-style): `position: fixed` at the
+  viewport bottom, full-width. Auto-shows on `focusin` of an eligible
+  field, hides on click-away. Page content shrinks via `body padding-bottom`
+  so nothing is covered.
+- **Per-field charsets** (`FIELD_CHARSETS`): purpose-built layouts keyed by
+  field id (e.g. `derivation-path`, `sp-recipients`) or class selector for
+  id-less dynamic inputs (`.msig-path-component-input`). Numeric inputs
+  auto-get a digits row; everything else falls back to the full layout.
+- **Exclusions**: sensitive fields with existing restricted-charset
+  keyboards (`EXISTING_KEYBOARD_FIELDS`) are untouched — their security
+  posture is upstream's design. Slider-driven fields
+  (`SLIDER_DRIVEN_FIELDS`: msig m/n) get no keyboard — the range input is
+  the better control.
+- **Dynamic fields**: a MutationObserver attaches eligibility to inputs and
+  textareas as they appear (msig co-signer rows render after paste) and
+  re-attaches after `replaceChildren()` re-renders destroy toggles/state.
+- **Key application**: `applyKey` inserts at the caret via
+  `selectionStart/End`; a `mousedown` preventDefault on the panel keeps the
+  input focused so the selection stays valid. `enter` inserts a newline
+  (textareas). Key presses dispatch real `input`/`change` events so
+  upstream listeners stay authoritative.
+
+### DEBUG OVERRIDE — REMOVE BEFORE PR
+
+`src/js/general-osk.js` line ~11: `const GENERAL_OSK_FORCE_ON = true`
+bypasses the touch/kiosk gate for development (pikvm/laptop iteration).
+Delete the const and its comment block before submitting upstream; esbuild
+folds it away, so the shipped artifact has no trace either way.
+
+### Deployment loop (development)
+
+```
+npm run build                     # rebuild entropylab.html
+cat entropylab.html | ssh -i ~/.ssh/doggyballs root@192.168.30.5 \
+  'cat > /opt/rockos/app/entropylab.html'   # busybox has no sftp
+ssh ... 'kill <cage pids>; sleep; /etc/init.d/S99rockos start'
+```
+
+Build reads ONLY `src/js/app.js` imports + `src/css/styles.css`. A separate
+`src/css/general-osk.css` is NOT a build input — OSK styles live in the
+marked block in `styles.css` (this bit us once: edits to the wrong file
+shipped nothing). cog caches the app in memory; the kiosk must restart
+after a file swap.
+
+### Gotchas learned
+
+- busybox on the Pi has no `pidof`/`pgrep`/`sftp-server` — kill by explicit
+  PIDs from `ps`, deploy via `cat | ssh` pipe.
+- Restarting cage too fast after a kill loses the DRM-master race and dumps
+  console text to tty1 — kill, wait, then start.
+- esbuild renames locals and folds consts; grep the bundle for values
+  (e.g. `margin-left: auto`), not identifiers.

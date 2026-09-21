@@ -2475,10 +2475,18 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 /* only layout-specific overrides here. */
 
 .general-osk-panel {
-  /* Inherits panel chrome from .seed-keyboard; right-justify so the panel
-     aligns under a field in the row's right-hand grid column. */
-  margin-left: auto;
-  margin-right: 0;
+  /* Bottom-docked phone-style keyboard: fixed to the viewport bottom,
+     full-width, always visible when open. Page content shrinks via
+     body padding-bottom (set in JS) so nothing is covered. */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: none;
+  margin: 0;
+  border-radius: 12px 12px 0 0;
+  border-bottom: none;
+  z-index: 1000;
 }
 
 /* Left-column fields (e.g. Purpose, Account, Starting branch/index) flip

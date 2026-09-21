@@ -10,8 +10,12 @@
   // When done iterating, delete this const to restore touch-only gating.
   const GENERAL_OSK_FORCE_ON = true;
 
-  // Only on touch devices (unless the debug override above is set)
-  if (!GENERAL_OSK_FORCE_ON && !window.matchMedia("(pointer: coarse)").matches) return;
+  // Only on touch devices (unless the debug override above is set).
+  // Exclude phones/tablets — they have a system IME, and showing our
+  // keyboard on top of it is a double-keyboard UX disaster. The OSK is
+  // for kiosks (touch + no system keyboard), not for phones.
+  const isKiosk = !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  if (!GENERAL_OSK_FORCE_ON && (!window.matchMedia("(pointer: coarse)").matches || !isKiosk)) return;
 
   const KEYBOARD_ID = "general-osk";
   const TOGGLE_CLASS = "general-keyboard-toggle";
@@ -70,6 +74,31 @@
       ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
       ["'", "backspace"],
     ],
+    // Silent payments: recipients (bech32 + BIP-321 URI + optional count)
+    "sp-recipients": [
+      ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+      ["a", "s", "d", "f", "g", "h", "j", "k", "l", "backspace"],
+      ["z", "x", "c", "v", "b", "n", "m", "1", "2", "3"],
+      ["4", "5", "6", "7", "8", "9", "0", ":", "?", "="],
+      ["@", ".", "/", " ", "enter"],
+    ],
+    // Silent payments: BIP-352 vin JSON (quotes, braces, brackets, colons,
+    // commas, hex, derivation path)
+    "sp-send-vins": [
+      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+      ["a", "b", "c", "d", "e", "f", "m", "/", "'", "backspace"],
+      ["{", "}", "[", "]", "\"", ":", ",", " ", "enter"],
+    ],
+    "sp-verify-vins": [
+      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+      ["a", "b", "c", "d", "e", "f", "m", "/", "'", "backspace"],
+      ["{", "}", "[", "]", "\"", ":", ",", " ", "enter"],
+    ],
+    // Silent payments: taproot output keys (32-byte x-only hex)
+    "sp-verify-outputs": [
+      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+      ["a", "b", "c", "d", "e", "f", "backspace"],
+    ],
   };
 
   // Resolve the lookup key for a field: its id, or the first FIELD_CHARSETS
@@ -93,6 +122,8 @@
 
   function isEligibleInput(input) {
     if (!input) return false;
+    // Textareas are eligible too (sp-recipients, sp-send-vins, etc.)
+    const isTextArea = input.tagName === "TEXTAREA";
     // Dynamically-created inputs may have no id but a known class
     const hasKnownClass = Object.keys(FIELD_CHARSETS).some(
       (key) => key.startsWith(".") && input.classList?.contains(key.slice(1)),
@@ -100,8 +131,10 @@
     if (!input.id && !hasKnownClass) return false;
     if (input.id && EXISTING_KEYBOARD_FIELDS.has(input.id)) return false;
     if (input.id && SLIDER_DRIVEN_FIELDS.has(input.id)) return false;
-    const type = (input.type || "text").toLowerCase();
-    if (!["text", "number"].includes(type)) return false;
+    if (!isTextArea) {
+      const type = (input.type || "text").toLowerCase();
+      if (!["text", "number"].includes(type)) return false;
+    }
     if (input.disabled || input.readOnly) return false;
     return true;
   }
@@ -198,22 +231,25 @@
     return panel;
   }
 
-  function toggleKeyboard(input) {
+  function showKeyboard(input) {
     activeInput = input;
     let panel = document.getElementById(KEYBOARD_ID);
 
     // Determine this field's character set (null = full layout)
     const charset = charsetFor(input);
 
-    // Rebuild panel if mode changed or doesn't exist
-    // Serialize the (possibly nested) layout for change detection
+    // Rebuild panel if charset changed or doesn't exist
     const charsetId = charset ? charset.map((r) => r.join("")).join("|") : "full";
     if (!panel || panel.dataset.charset !== charsetId) {
       if (panel) panel.remove();
       panel = buildKeyboardPanel(charset);
       panel.dataset.charset = charsetId;
       document.body.append(panel);
-      // Wire key clicks
+      // Wire key clicks — preventDefault on mousedown so the input never
+      // loses focus (selectionStart/End stay valid for applyKey)
+      panel.addEventListener("mousedown", function (e) {
+        if (e.target.closest("[data-general-key]")) e.preventDefault();
+      });
       panel.addEventListener("click", function (e) {
         const key = e.target.closest("[data-general-key]");
         if (!key) return;
@@ -222,56 +258,41 @@
       });
     }
 
-    const fieldKey = fieldKeyFor(input);
-    if (keyboardVisible && panel.dataset.activeFor === fieldKey) {
-      // Hide
-      panel.hidden = true;
-      keyboardVisible = false;
-      panel.dataset.activeFor = "";
-      document.querySelectorAll(`[data-general-osk-toggle]`).forEach((b) => {
-        b.setAttribute("aria-expanded", "false");
-        b.setAttribute("aria-label", "Show on-screen keyboard");
-      });
+    // Show the keyboard docked at the bottom of the viewport
+    panel.hidden = false;
+    keyboardVisible = true;
+    panel.dataset.activeFor = fieldKeyFor(input);
+    document.querySelectorAll(`[data-general-osk-toggle]`).forEach((b) => {
+      b.setAttribute("aria-expanded", "false");
+      b.setAttribute("aria-label", "Show on-screen keyboard");
+    });
+    document.querySelectorAll(`[data-general-osk-toggle="${fieldKeyFor(input)}"]`).forEach((b) => {
+      b.setAttribute("aria-expanded", "true");
+      b.setAttribute("aria-label", "Hide on-screen keyboard");
+    });
+
+    // Page-shrink: add bottom padding so the keyboard doesn't cover content
+    document.body.style.paddingBottom = (panel.offsetHeight || 240) + "px";
+  }
+
+  function hideKeyboard() {
+    const panel = document.getElementById(KEYBOARD_ID);
+    if (panel) panel.hidden = true;
+    keyboardVisible = false;
+    activeInput = null;
+    document.body.style.paddingBottom = "";
+    document.querySelectorAll(`[data-general-osk-toggle]`).forEach((b) => {
+      b.setAttribute("aria-expanded", "false");
+      b.setAttribute("aria-label", "Show on-screen keyboard");
+    });
+  }
+
+  function toggleKeyboard(input) {
+    const panel = document.getElementById(KEYBOARD_ID);
+    if (keyboardVisible && panel && panel.dataset.activeFor === fieldKeyFor(input)) {
+      hideKeyboard();
     } else {
-      // Show
-      panel.hidden = false;
-      keyboardVisible = true;
-      panel.dataset.activeFor = fieldKey;
-      document.querySelectorAll(`[data-general-osk-toggle="${fieldKey}"]`).forEach((b) => {
-        b.setAttribute("aria-expanded", "true");
-        b.setAttribute("aria-label", "Hide on-screen keyboard");
-      });
-      // Position the panel below the field's ROW or GRID (never inside a grid
-      // cell, which would squash it to one column width). Justification
-      // follows the field's column when the container is a two-column
-      // row: left-column fields get a left-justified keyboard, right-column
-      // fields a right-justified one, so the keyboard sits under the field
-      // that opened it. Single-column grids (e.g. .vanity-grid) place the
-      // panel below the whole grid at full content width.
-      const field = input.closest("label.field, .field") || input.parentElement;
-      const row = field && field.closest(".key-settings-row");
-      const grid = field && field.closest(".vanity-grid, .derivation-advanced-fields, .bip85-grid, .msig-origin-fields, .msig-path-components");
-      if (row && row.parentNode) {
-        row.parentNode.insertBefore(panel, row.nextSibling);
-        // Column detection: compare the field against the row's first grid child
-        const firstCell = row.firstElementChild;
-        const inLeftColumn = !firstCell || field === firstCell || firstCell.contains(field);
-        panel.classList.toggle("general-osk-left", inLeftColumn);
-      } else if (grid && grid.parentNode) {
-        grid.parentNode.insertBefore(panel, grid.nextSibling);
-        // Column awareness for multi-column grids (e.g. the vanity params
-        // grid): justify toward the field's own grid column. Fields in the
-        // first half of the grid's visible columns get a left-justified
-        // keyboard; later columns stay right-justified.
-        const visible = Array.from(grid.children).filter((c) => !c.hidden);
-        const fieldIndex = visible.indexOf(field);
-        const inLeftColumn = fieldIndex !== -1 && fieldIndex < visible.length / 2;
-        panel.classList.toggle("general-osk-left", inLeftColumn);
-      } else if (field && field.parentNode) {
-        field.parentNode.insertBefore(panel, field.nextSibling);
-        panel.classList.remove("general-osk-left");
-      }
-      input.focus();
+      showKeyboard(input);
     }
   }
 
@@ -293,6 +314,10 @@
     } else if (key === "mode") {
       // TODO: cycle between lower/upper/numeric (future enhancement)
       return;
+    } else if (key === "enter") {
+      // Insert newline at cursor (textareas only; harmless on inputs)
+      input.value = value.slice(0, start) + "\n" + value.slice(end);
+      input.selectionStart = input.selectionEnd = start + 1;
     } else {
       input.value = value.slice(0, start) + key + value.slice(end);
       input.selectionStart = input.selectionEnd = start + key.length;
@@ -307,19 +332,15 @@
     if (!isEligibleInput(input)) return;
     if (input.dataset.generalOskAttached) return;
     input.dataset.generalOskAttached = "1";
-
-    // Toggle sits directly beneath the input (inside the field container,
-    // before any help note) so it visually belongs to the field it opens
-    if (input.parentElement) {
-      input.insertAdjacentElement("afterend", buildToggle(input));
-    }
+    // No toggle button: the keyboard auto-shows on focus (phone pattern).
+    // The field's own focus event is the trigger; the toggle is redundant.
   }
 
   function initGeneralOSK() {
     if (document.getElementById(KEYBOARD_ID)) return; // already init'd
 
-    // Existing inputs
-    document.querySelectorAll("input").forEach(attachToggleIfEligible);
+    // Existing inputs and textareas
+    document.querySelectorAll("input, textarea").forEach(attachToggleIfEligible);
 
     // Dynamically-created fields (e.g. multisig co-signer rows render after
     // keys are pasted) get toggles as they appear. Also handles re-renders:
@@ -330,31 +351,34 @@
         for (const m of mutations) {
           m.addedNodes.forEach(function (node) {
             if (node.nodeType !== 1) return;
-            if (node.tagName === "INPUT") attachToggleIfEligible(node);
-            else if (node.querySelectorAll) node.querySelectorAll("input").forEach(attachToggleIfEligible);
+            if (node.tagName === "INPUT" || node.tagName === "TEXTAREA") attachToggleIfEligible(node);
+            else if (node.querySelectorAll) node.querySelectorAll("input, textarea").forEach(attachToggleIfEligible);
           });
           // Re-render safety: if a container was replaced, its new inputs
           // may not have toggles yet. Scan the added container's inputs.
           if (m.target && m.target.querySelectorAll) {
-            m.target.querySelectorAll("input").forEach(attachToggleIfEligible);
+            m.target.querySelectorAll("input, textarea").forEach(attachToggleIfEligible);
           }
         }
       }).observe(document.body, { childList: true, subtree: true });
     }
+
+    // Auto-show keyboard when an eligible field receives focus (phone pattern).
+    // The toggle button still works for explicit show/hide.
+    document.addEventListener("focusin", function (e) {
+      if (isEligibleInput(e.target)) {
+        showKeyboard(e.target);
+      }
+    });
 
     // Hide keyboard when clicking outside an input
     document.addEventListener("click", function (e) {
       if (!keyboardVisible) return;
       if (e.target.closest("[data-general-osk-toggle]")) return;
       if (e.target.closest("#" + KEYBOARD_ID)) return;
-      if (e.target.tagName === "INPUT") return;
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
       // Click elsewhere — hide
-      const panel = document.getElementById(KEYBOARD_ID);
-      if (panel) panel.hidden = true;
-      keyboardVisible = false;
-      document.querySelectorAll("[data-general-osk-toggle]").forEach((b) => {
-        b.setAttribute("aria-expanded", "false");
-      });
+      hideKeyboard();
     });
   }
 
