@@ -160,7 +160,7 @@ const outputBox = (doc, index, network, copyIcon) => {
       ${address ? "" : `<span class="psbted-viz-id ${!kind ? "psbted-viz-out" : "psbted-viz-tag"}">${escapeHtml(label)}</span>`}
     </button>
     ${address ? publicValueHtml(address, { copyIcon, preview: label, className: "psbted-viz-id psbted-viz-out" }) : ""}
-    <p class="psbted-viz-amount"><input class="psbted-viz-sats" data-txout-val="${index}" value="${escapeHtml(String(output.value))}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Output ${index} value in sats"> sats</p>
+    <p class="psbted-viz-amount"><input class="psbted-viz-sats" data-general-osk="integer" min="0" data-txout-val="${index}" value="${escapeHtml(String(output.value))}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Output ${index} value in sats"> sats</p>
     <p class="psbted-viz-sub"><span class="muted">${escapeHtml(sub)}</span></p>
   </div>`;
 };

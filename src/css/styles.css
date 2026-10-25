@@ -3233,3 +3233,53 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   background: color-mix(in oklab, var(--accent) 9%, var(--surface)); color: inherit;
   font: inherit; line-height: 1.2; outline: 0;
 }
+
+/* Explicit kiosk opt-in: the module creates this dock only for ?osk=1.
+   Shared upstream keyboard styles supply colours and key interaction. */
+.general-osk-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: none;
+  margin: 0;
+  border-radius: var(--radius-container) var(--radius-container) 0 0;
+  border-bottom: none;
+  z-index: 1000;
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--space-control) max(var(--space-control), env(safe-area-inset-right)) max(var(--space-control), env(safe-area-inset-bottom)) max(var(--space-control), env(safe-area-inset-left));
+}
+.general-osk-panel[hidden] { display: none; }
+.general-osk-panel .general-osk-key-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-tight);
+  max-width: 1000px;
+  margin: var(--space-tight) auto;
+}
+.general-osk-panel .general-osk-key-row .seed-keyboard-key {
+  flex: 1 1 44px;
+  width: auto;
+  min-width: 0;
+  max-width: 90px;
+  min-height: 44px;
+  padding: var(--space-tight);
+  box-sizing: border-box;
+  font-size: var(--text-keypad);
+  touch-action: manipulation;
+}
+.general-osk-full .general-osk-key-row {
+  display: grid;
+  grid-template-columns: repeat(var(--osk-columns-wide), minmax(0, 1fr));
+  width: 100%;
+}
+.general-osk-full .general-osk-key-row .seed-keyboard-key { max-width: none; }
+@media (max-width: 479px) {
+  .general-osk-full .general-osk-key-row {
+    grid-template-columns: repeat(var(--osk-columns-narrow), minmax(0, 1fr));
+  }
+}

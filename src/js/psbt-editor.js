@@ -680,8 +680,8 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
         // opens the full text in the expandable editor window. A long value
         // stays editable there, so the write path matches the plain input's.
         const valueCell = pair.value.length > EXPAND_LIMIT
-          ? expandableHtml(pair.value, { label: `Value bytes for ${name} (hex)`, editAttrs: `data-kind="${kind}" data-map="${mapIndex}" data-pair="${pairIndex}"` })
-          : `<input class="psbted-value" data-kind="${kind}" data-map="${mapIndex}" data-pair="${pairIndex}" value="${escapeHtml(pair.value)}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Value bytes for ${escapeHtml(name)} (hex)">`;
+          ? expandableHtml(pair.value, { label: `Value bytes for ${name} (hex)`, editAttrs: `data-general-osk="hex" data-kind="${kind}" data-map="${mapIndex}" data-pair="${pairIndex}"` })
+          : `<input class="psbted-value" data-general-osk="hex" data-kind="${kind}" data-map="${mapIndex}" data-pair="${pairIndex}" value="${escapeHtml(pair.value)}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Value bytes for ${escapeHtml(name)} (hex)">`;
         return `<tr role="row">
           <td role="cell" class="psbted-name">${escapeHtml(pair.name || "Unvalidated pair")}<br><span class="muted">type 0x${escapeHtml(pair.key.slice(0, 2))}</span></td>
           <td role="cell" class="psbted-hex">${cellLabel(KV_COLUMNS.key)}${expandableHtml(pair.key, { label: `Key bytes for ${name} (hex)` })}</td>
@@ -700,8 +700,8 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     </table>
     <div class="psbted-add">
       <select data-add-type="${kind}:${mapIndex}" aria-label="New pair type">${options}<option value="" title="keydata field takes the full key: one type byte, then keydata">Custom type…</option></select>
-      <input data-add-key="${kind}:${mapIndex}" placeholder="keydata (hex)" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="New pair keydata (hex)">
-      <input data-add-val="${kind}:${mapIndex}" placeholder="value (hex)" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="New pair value (hex)">
+      <input data-general-osk="hex" data-add-key="${kind}:${mapIndex}" placeholder="keydata (hex)" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="New pair keydata (hex)">
+      <input data-general-osk="hex" data-add-val="${kind}:${mapIndex}" placeholder="value (hex)" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="New pair value (hex)">
       <button type="button" class="btn secondary" data-add="${kind}:${mapIndex}">Add Pair</button>
     </div>`;
   };
@@ -746,9 +746,9 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
       .map(
         (input, index) => `<tr role="row">
           <td role="cell">${cellLabel("Input")}${index}</td>
-          <td role="cell">${cellLabel(TXIN_COLUMNS.txid)}<input class="psbted-txid" data-txin="${index}" value="${escapeHtml(input.txid)}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Input ${index} previous txid (hex)"></td>
-          <td role="cell">${cellLabel(TXIN_COLUMNS.vout)}<input class="psbted-num" data-txin-vout="${index}" value="${escapeHtml(String(input.vout))}" inputmode="numeric" aria-label="Input ${index} prevout index"></td>
-          <td role="cell">${cellLabel(TXIN_COLUMNS.seq)}<input class="psbted-num" data-txin-seq="${index}" value="${escapeHtml(String(input.sequence))}" inputmode="numeric" aria-label="Input ${index} sequence"></td>
+          <td role="cell">${cellLabel(TXIN_COLUMNS.txid)}<input class="psbted-txid" data-general-osk="hex" data-txin="${index}" value="${escapeHtml(input.txid)}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Input ${index} previous txid (hex)"></td>
+          <td role="cell">${cellLabel(TXIN_COLUMNS.vout)}<input class="psbted-num" data-general-osk="integer" min="0" data-txin-vout="${index}" value="${escapeHtml(String(input.vout))}" inputmode="numeric" aria-label="Input ${index} prevout index"></td>
+          <td role="cell">${cellLabel(TXIN_COLUMNS.seq)}<input class="psbted-num" data-general-osk="integer" min="0" data-txin-seq="${index}" value="${escapeHtml(String(input.sequence))}" inputmode="numeric" aria-label="Input ${index} sequence"></td>
           <td role="cell" class="psbted-del-cell">${tx.inputs.length > 1 ? `<button type="button" class="btn red psbted-del" data-txin-del="${index}" aria-label="Delete input ${index}">×</button>` : ""}</td>
         </tr>`
       )
@@ -759,10 +759,10 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
         const opret = addr ? null : opReturnSummary(output.scriptPubKey, output.value);
         return `<tr role="row">
           <td role="cell">${cellLabel("Output")}${index}</td>
-          <td role="cell">${cellLabel(TXOUT_COLUMNS.value)}<input class="psbted-num" data-txout-val="${index}" value="${escapeHtml(String(output.value))}" inputmode="numeric" aria-label="Output ${index} value in sats"></td>
-          <td role="cell">${cellLabel(TXOUT_COLUMNS.script)}<input class="psbted-txid" data-txout-script="${index}" value="${escapeHtml(output.scriptPubKey)}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Output ${index} scriptPubKey (hex)">
+          <td role="cell">${cellLabel(TXOUT_COLUMNS.value)}<input class="psbted-num" data-general-osk="integer" min="0" data-txout-val="${index}" value="${escapeHtml(String(output.value))}" inputmode="numeric" aria-label="Output ${index} value in sats"></td>
+          <td role="cell">${cellLabel(TXOUT_COLUMNS.script)}<input class="psbted-txid" data-general-osk="hex" data-txout-script="${index}" value="${escapeHtml(output.scriptPubKey)}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Output ${index} scriptPubKey (hex)">
             <span class="${opret?.burn ? "psbted-note-warn" : "muted"} psbted-addr">${addr ? publicValueHtml(addr, { label: "Address", copyIcon }) : escapeHtml(opret?.text || output.asm || "")}</span>
-            <span class="psbted-build"><input data-build-script="${index}" placeholder="address · OP_… ASM · 0x raw hex · text" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Build output ${index} scriptPubKey from an address, ASM, or OP_RETURN text"><select data-build-mode="${index}" aria-label="Output ${index} script builder mode"><option value="auto" selected>Auto-detect</option><option value="opreturn-text">OP_RETURN text</option><option value="opreturn-hex">OP_RETURN hex</option><option value="asm">Script ASM</option></select><button type="button" class="btn secondary" data-build-apply="${index}">Set Script</button></span></td>
+            <span class="psbted-build"><input data-general-osk="text" data-build-script="${index}" placeholder="address · OP_… ASM · 0x raw hex · text" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Build output ${index} scriptPubKey from an address, ASM, or OP_RETURN text"><select data-build-mode="${index}" aria-label="Output ${index} script builder mode"><option value="auto" selected>Auto-detect</option><option value="opreturn-text">OP_RETURN text</option><option value="opreturn-hex">OP_RETURN hex</option><option value="asm">Script ASM</option></select><button type="button" class="btn secondary" data-build-apply="${index}">Set Script</button></span></td>
           <td role="cell" class="psbted-del-cell"><button type="button" class="btn red psbted-del" data-txout-del="${index}" aria-label="Delete output ${index}">×</button></td>
         </tr>`;
       })
@@ -781,8 +781,8 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     // or inside the detail panel when the diagram's transaction box is open.
     const txSection = () => `<section class="psbted-map" data-psbted-section="tx" tabindex="-1"><p class="label psbted-section-label">Unsigned transaction</p>
         <div class="psbted-txhead">
-          <label>Version <input class="psbted-num" id="psbted-tx-version" value="${escapeHtml(String(tx.version))}" inputmode="numeric"></label>
-          <label>Locktime <input class="psbted-num" id="psbted-tx-locktime" value="${escapeHtml(String(tx.locktime))}" inputmode="numeric"></label>
+          <label>Version <input class="psbted-num" data-general-osk="integer" id="psbted-tx-version" value="${escapeHtml(String(tx.version))}" inputmode="numeric"></label>
+          <label>Locktime <input class="psbted-num" data-general-osk="integer" min="0" id="psbted-tx-locktime" value="${escapeHtml(String(tx.locktime))}" inputmode="numeric"></label>
         </div>
         <p class="label psbted-section-label">Inputs</p>
         <table class="psbted-pairs psbted-txins psbted-stack" role="table"><thead role="rowgroup"><tr role="row"><th role="columnheader" class="psbted-idx">#</th><th role="columnheader">${TXIN_COLUMNS.txid}</th><th role="columnheader" class="psbted-col-vout">${TXIN_COLUMNS.vout}</th><th role="columnheader" class="psbted-col-seq">${TXIN_COLUMNS.seq}</th><th role="columnheader" class="psbted-col-del"></th></tr></thead><tbody role="rowgroup">${inputRows}</tbody></table>

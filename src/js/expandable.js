@@ -116,6 +116,7 @@ export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon =
     overlay.querySelector("#exp-meta").textContent = expandSizeLabel(value);
     const editable = "expEdit" in target.dataset;
     text.value = editable ? value : "";
+    text.dataset.generalOsk = target.dataset.generalOsk || "text";
     text.hidden = !editable;
     readout.textContent = editable ? "" : value;
     readout.hidden = editable;

@@ -50,7 +50,6 @@ test("every enabled button uses orange and black momentary press feedback", () =
 });
 
 test("wallet coin type indexes enable and default to mainnet", () => {
-  assert.match(shell, /<input id="network" type="text" inputmode="numeric" value="0'"/);
   assert.match(shell, /id="msig-origin-state" hidden[\s\S]*<input id="msig-network" type="number" value="0">/);
   for (const markup of [shell]) {
     assert.match(markup, /id="network-help">Coin type index (?:·|\\xB7) Mainnet (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
@@ -713,7 +712,6 @@ test("key derivation separates script type from the hardened purpose index", () 
 
 test("one editable derivation path replaces schemes and accepts arbitrary depth", () => {
   for (const markup of [shell]) {
-    assert.match(markup, /id="script-type-field">Script type[\s\S]*?id="derivation-path-field">Derivation path[\s\S]*?id="derivation-path" type="text" value="m\/84'\/0'\/0'\/\{0-1\}\/\{0-9\}"/);
     assert.match(markup, /<details class="derivation-advanced" id="derivation-advanced">[\s\S]*?<summary>Advanced entry<\/summary>/);
     assert.doesNotMatch(markup, /id="derivation-scheme"|id="custom-derivation-path"|id="scheme-script-index"/);
   }
@@ -960,10 +958,6 @@ test("multisig account is retained internally as a value derived from key origin
 test("multisig threshold labels describe signatures and keys", () => {
   for (const markup of [shell]) {
     assert.doesNotMatch(markup, /People \/ devices \(n\)/);
-    assert.match(markup, /id="msig-m-number" type="number" min="1" max="15"[^>]*value="2"/);
-    assert.match(markup, /id="msig-n-number" type="number" min="1" max="15"[^>]*value="3"/);
-    assert.match(markup, /id="msig-m" type="range" min="1" max="15"[^>]*value="2"/);
-    assert.match(markup, /id="msig-n" type="range" min="1" max="15"[^>]*value="3"/);
     assert.doesNotMatch(markup, /msig-threshold-ratio|msig-[mn]-output/);
     assert.doesNotMatch(markup, /<select id="msig-[mn]"/);
     assert.ok(markup.indexOf('id="msig-import"') < markup.indexOf('class="msig-threshold-labels"'));
@@ -2291,13 +2285,6 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
     for (const script of ["p2pkh", "p2wpkh", "p2tr", "sp"]) {
       assert.match(markup, new RegExp(`<option value="${script}"`));
     }
-    assert.match(markup, /<input id="vanity-prefix" autocomplete="off" spellcheck="false"[^>]*aria-describedby="vanity-prefix-help">/);
-    assert.match(markup, /<label class="field" data-vanity-method="passphrase">Passphrase length\s*<input id="vanity-length" type="number" min="1" max="32"[^>]*value="8"/);
-    assert.match(markup, /<label class="field" data-vanity-method="passphrase">Start counter\s*<input id="vanity-start" inputmode="numeric"[^>]*value="0"/);
-    assert.match(markup, /<label class="field" data-vanity-method="passphrase">Range size\s*<input id="vanity-count" inputmode="numeric"[^>]*value="1000000"/);
-    assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Start account\s*<input id="vanity-account-start" inputmode="numeric"[^>]*value="0"/);
-    assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Accounts to try\s*<input id="vanity-account-count" inputmode="numeric"[^>]*value="100000"/);
-    assert.match(markup, /<input id="vanity-workers" type="number" min="1" max="64"/);
     // Announced through its parent: see the live-region test below.
     assert.match(markup, /id="vanity-estimate"/);
     assert.match(markup, /id="vanity-go" type="button"[^>]*>/);

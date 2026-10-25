@@ -121,6 +121,7 @@ import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-sessi
 import { initTextServiceOptOuts, initTranslationWarning } from "./text-services.js";
 import { initSecurityLog } from "./security-log.js";
 import { initConcealOnLeave } from "./conceal-on-leave.js";
+import "./general-osk.js";
 const hodlBip39Wordlist = Object.freeze(bip39English);
 function hodlNote(key, vars) {
   return vars == null ? { key } : { key, vars };
@@ -8909,6 +8910,9 @@ function hodlRenderMsigPathComponents(row) {
     value.className = "msig-path-component-input";
     value.type = "text";
     value.inputMode = "numeric";
+    value.dataset.generalOsk = "integer";
+    value.dataset.generalOskKey = String(index);
+    value.min = "0";
     value.value = hodlPathComponent(component.index, component.hardened);
     value.dataset.pathIndex = String(index);
     value.autocomplete = "off";
@@ -9138,6 +9142,7 @@ function hodlFillKeys(values, specs) {
     let ta = document.createElement("textarea");
     ta.id = "msig-x-" + i;
     ta.autocomplete = "off";
+    ta.dataset.generalOsk = "text";
     ta.spellcheck = false;
     ta.value = saved[i] || "";
     let chips = document.createElement("div");
@@ -9152,6 +9157,7 @@ function hodlFillKeys(values, specs) {
     let pathInput = document.createElement("input");
     pathInput.className = "msig-full-path";
     pathInput.type = "text";
+    pathInput.dataset.generalOsk = "path";
     pathInput.autocomplete = "off";
     pathInput.spellcheck = false;
     pathInput.setAttribute("aria-label", hodlTText("Full derivation path for co-signer {n}", { n: i + 1 }));
@@ -9167,6 +9173,7 @@ function hodlFillKeys(values, specs) {
     let fingerprintInput = document.createElement("input");
     fingerprintInput.className = "msig-master-fingerprint";
     fingerprintInput.type = "text";
+    fingerprintInput.dataset.generalOsk = "hex";
     fingerprintInput.inputMode = "text";
     fingerprintInput.maxLength = 8;
     fingerprintInput.autocomplete = "off";
@@ -9201,6 +9208,7 @@ function hodlFillKeys(values, specs) {
     advancedSummary.textContent = hodlTText("Advanced entry for Co-signer {n}", { n: i + 1 });
     let pathComponents = document.createElement("div");
     pathComponents.className = "derivation-advanced-fields msig-path-components";
+    pathComponents.dataset.generalOskScope = "";
     advanced.append(advancedSummary, pathComponents);
     let keyStatus = document.createElement("p");
     keyStatus.className = "hint msig-key-status";
