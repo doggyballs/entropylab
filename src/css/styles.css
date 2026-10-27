@@ -3236,6 +3236,15 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 
 /* Explicit kiosk opt-in: the module creates this dock only for ?osk=1.
    Shared upstream keyboard styles supply colours and key interaction. */
+.modal-overlay.general-osk-modal {
+  bottom: var(--osk-height);
+  grid-template-rows: minmax(0, 1fr);
+}
+.general-osk-modal > .modal-card {
+  box-sizing: border-box;
+  max-height: 100%;
+  overflow-y: auto;
+}
 .general-osk-panel {
   position: fixed;
   bottom: 0;
@@ -3258,6 +3267,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--space-tight);
+  width: 100%;
   max-width: 1000px;
   margin: var(--space-tight) auto;
 }

@@ -10,7 +10,7 @@ import { t as hodlTText } from "./i18n.js";
   const hex = [digits, "abcdef"];
   const letters = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
   const symbols = [digits, "!@#$%^&*()", "-_=+[]{}", "\\|;:'\",.<>/?`~"];
-  let active = null, panel = null, spacer = null, mode = 0;
+  let active = null, panel = null, spacer = null, modal = null, mode = 0;
   let numberDraft = null;
   let ownInput = null, inputRevision = 0;
 
@@ -52,9 +52,17 @@ import { t as hodlTText } from "./i18n.js";
     return null;
   }
 
+  function releaseModal() {
+    if (!modal) return;
+    modal.classList.remove("general-osk-modal");
+    modal.style.removeProperty("--osk-height");
+    modal = null;
+  }
+
   function hide() {
     if (panel) panel.hidden = true;
     if (spacer) spacer.style.height = "0px";
+    releaseModal();
     active = null;
     numberDraft = null;
   }
@@ -62,13 +70,26 @@ import { t as hodlTText } from "./i18n.js";
   function fit() {
     if (!active || !panel || panel.hidden) return;
     if (!active.isConnected || !eligible(active)) return hide();
-    spacer.style.height = panel.getBoundingClientRect().height + "px";
-    const field = active.getBoundingClientRect(), dock = panel.getBoundingClientRect();
+    const nextModal = active.closest(".modal-overlay");
+    if (modal !== nextModal) {
+      releaseModal();
+      modal = nextModal;
+    }
+    const dock = panel.getBoundingClientRect();
+    spacer.style.height = modal ? "0px" : dock.height + "px";
+    if (modal) {
+      modal.classList.add("general-osk-modal");
+      modal.style.setProperty("--osk-height", dock.height + "px");
+    }
+    const field = active.getBoundingClientRect();
+    const card = modal && active.closest(".modal-card")?.getBoundingClientRect();
+    const top = card ? Math.max(0, card.top) : 0;
+    const bottomEdge = card ? Math.min(dock.top, card.bottom) : dock.top;
     // Scroll the nearest scrolling container, then clear the dock if necessary.
-    if (field.bottom > dock.top || field.top < 0) {
+    if (field.bottom > bottomEdge - 8 || field.top < top + 8) {
       active.scrollIntoView({ block: "center", behavior: "instant" });
       const bottom = active.getBoundingClientRect().bottom;
-      if (bottom > dock.top - 8) window.scrollBy(0, bottom - dock.top + 8);
+      if (!modal && bottom > dock.top - 8) window.scrollBy(0, bottom - dock.top + 8);
     }
   }
 
@@ -209,6 +230,9 @@ import { t as hodlTText } from "./i18n.js";
 
   document.addEventListener("focusin", event => {
     if (panel?.contains(event.target)) return;
+    // Keep modal buttons stationary between pointer-down focus and click.
+    // The click handler releases the reserved space after activation.
+    if (modal?.contains(event.target) && event.target.closest("button")) return;
     show(event.target);
   });
   document.addEventListener("click", event => {
